@@ -1,0 +1,282 @@
+// prisma/schema.prisma
+
+// Configuration du générateur Prisma Client
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUM ROLE - Roles des utilisateurs
+// ============================================
+enum Role {
+  ADMIN
+  SUPERVISOR
+  STUDENT
+  JURY
+}
+
+// ============================================
+// ENUM STATUS - Workflow sujets & validations
+// ============================================
+enum Status {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION
+  COMPLETED
+}
+
+// ============================================
+// MODELE USER (Utilisateur)
+// ============================================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique @db.VarChar(191)
+  password  String   @default("") @db.VarChar(255)
+  name      String?  @db.VarChar(191)
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memoires         Memoire[]
+  proposedSujets   Sujet[]       @relation("Proposer")
+  supervisedSujets Sujet[]       @relation("Superviser")
+  validations      Validation[]
+  notifications    Notification[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ============================================
+// MODELE SUJET (Proposition de memoire)
+// ============================================
+model Sujet {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(255)
+  description String   @db.Text
+  keywords    Json?    @db.Json
+  problematique String? @db.Text
+  objectives     String? @db.Text
+  methodology   String? @db.Text
+  status      Status   @default(PENDING)
+  type        String   @default("PROPOSED") @db.VarChar(50)
+  feedback    String?  @db.Text
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  proposerId   String      @db.VarChar(191)
+  proposer     User        @relation("Proposer", fields: [proposerId], references: [id])
+  supervisorId String?     @db.VarChar(191)
+  supervisor   User?       @relation("Superviser", fields: [supervisorId], references: [id])
+  domainId     String?     @db.VarChar(191)
+  domain       Domain?     @relation(fields: [domainId], references: [id])
+  memoireId    String?     @unique @db.VarChar(191)
+  memoire      Memoire?    @relation("SujetMemoire", fields: [memoireId], references: [id])
+  memoireSource Memoire?   @relation("MemoireSujet")
+  validations  Validation[]
+
+  @@index([status])
+  @@index([domainId])
+  @@index([proposerId])
+  @@index([supervisorId])
+}
+
+// ============================================
+// MODELE VALIDATION (Suivi du workflow)
+// ============================================
+model Validation {
+  id        String   @id @default(cuid())
+  status    Status   @default(PENDING)
+  comment   String?  @db.Text
+  step      String   @db.VarChar(50) // "SUJET", "PLAN", "REDACTION", "FINAL"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sujetId     String @db.VarChar(191)
+  sujet       Sujet  @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+  validatorId String @db.VarChar(191)
+  validator   User   @relation(fields: [validatorId], references: [id])
+
+  @@index([sujetId])
+  @@index([validatorId])
+  @@index([status])
+  @@index([step])
+}
+
+// ============================================
+// MODELE MEMOIRE
+// ============================================
+model Memoire {
+  id        String   @id @default(cuid())
+  title     String   @db.VarChar(255)
+  abstract  String?  @db.Text
+  content   Json?    @db.Json
+  status    String   @default("DRAFT") @db.VarChar(50)
+  progress  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  etudiantId String    @db.VarChar(191)
+  etudiant   User      @relation(fields: [etudiantId], references: [id])
+  sections   Section[]
+  plan       Plan?
+  timeline   Timeline[]
+  domainId   String?   @db.VarChar(191)
+  domain     Domain?   @relation(fields: [domainId], references: [id])
+  sujetId    String?   @unique @db.VarChar(191)
+  sujet      Sujet?    @relation("MemoireSujet", fields: [sujetId], references: [id])
+  sujetSource Sujet?   @relation("SujetMemoire")
+
+  @@index([etudiantId])
+  @@index([status])
+}
+
+// ============================================
+// MODELE SECTION (Chapitres d'un memoire)
+// ============================================
+model Section {
+  id        String   @id @default(cuid())
+  title     String   @db.VarChar(255)
+  content   Json?    @db.Json
+  position  Int
+  status    String   @default("DRAFT") @db.VarChar(50)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memoireId String  @db.VarChar(191)
+  memoire   Memoire @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+
+  @@index([memoireId])
+  @@index([position])
+}
+
+// ============================================
+// MODELE PLAN (Plan interactif du memoire)
+// ============================================
+model Plan {
+  id            String   @id @default(cuid())
+  title         String   @db.VarChar(255)
+  structure     Json?    @db.Json
+  estimatedTime Int?     @db.Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  memoireId    String        @unique @db.VarChar(191)
+  memoire      Memoire       @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+  planSections PlanSection[]
+
+  @@index([memoireId])
+}
+
+// ============================================
+// MODELE PLAN SECTION (Elements du plan)
+// ============================================
+model PlanSection {
+  id            String   @id @default(cuid())
+  title         String   @db.VarChar(255)
+  description   String?  @db.Text
+  position      Int
+  estimatedTime Int?     @db.Int
+  type          String   @default("chapter") @db.VarChar(50)
+  level         Int      @default(0)
+
+  // Relations
+  planId   String        @db.VarChar(191)
+  plan     Plan          @relation(fields: [planId], references: [id], onDelete: Cascade)
+  parentId String?       @db.VarChar(191)
+  parent   PlanSection?  @relation("PlanHierarchy", fields: [parentId], references: [id])
+  children PlanSection[] @relation("PlanHierarchy")
+
+  @@index([planId])
+  @@index([position])
+}
+
+// ============================================
+// MODELE DOMAINE (Categorias de sujets)
+// ============================================
+model Domain {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(191)
+  description String?  @db.Text
+  color       String?  @db.VarChar(7)
+  icon        String?  @db.VarChar(50)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  subjects Sujet[]
+  memoires Memoire[]
+
+  @@index([name])
+  @@index([isActive])
+}
+
+// ============================================
+// MODELE KEYWORD (Mots-cles)
+// ============================================
+model Keyword {
+  id        String   @id @default(cuid())
+  name      String   @unique @db.VarChar(191)
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+// ============================================
+// MODELE TIMELINE (Chronogramme)
+// ============================================
+model Timeline {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  startDate   DateTime @db.DateTime(0)
+  endDate     DateTime @db.DateTime(0)
+  completed   Boolean  @default(false)
+  position    Int
+  type        String   @default("task") @db.VarChar(50)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  memoireId String  @db.VarChar(191)
+  memoire   Memoire @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+
+  @@index([memoireId])
+  @@index([startDate])
+  @@index([completed])
+}
+
+// ============================================
+// MODELE NOTIFICATION
+// ============================================
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @db.VarChar(191)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  type      String   @default("info") @db.VarChar(50)
+  link      String?  @db.VarChar(191)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
