@@ -125,6 +125,14 @@ model Memoire {
   progress  Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+   versions      Version[]
+  bibliographies Bibliography[]
+  plagiarismReports PlagiarismReport[]
+  aiTraces      AITrace[]
+  lastEditedAt  DateTime? @db.DateTime(0)
+  autoSave      Boolean   @default(true)
+  wordCount     Int       @default(0)
+  currentVersion Int      @default(1)
 
   // Relations
   etudiantId String    @db.VarChar(191)
@@ -161,7 +169,123 @@ model Section {
   @@index([memoireId])
   @@index([position])
 }
+// ============================================
+// MODÈLE VERSION (Historique des modifications)
+// ============================================
 
+model Version {
+  id          String   @id @default(cuid())
+  memoireId   String   @db.VarChar(191)
+  memoire     Memoire  @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+  content     Json?    @db.Json
+  version     Int
+  userId      String   @db.VarChar(191)
+  user        User     @relation(fields: [userId], references: [id])
+  comment     String?  @db.VarChar(255)
+  wordCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+  
+  @@index([memoireId])
+  @@index([userId])
+  @@index([version])
+  @@index([createdAt])
+}
+
+// ============================================
+// MODÈLE BIBLIOGRAPHIE (Références)
+// ============================================
+
+model Bibliography {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(255)
+  authors     Json?    @db.Json           // [{name: "Dupont, J."}]
+  year        String?  @db.VarChar(10)
+  journal     String?  @db.VarChar(255)
+  volume      String?  @db.VarChar(50)
+  issue       String?  @db.VarChar(50)
+  pages       String?  @db.VarChar(50)
+  publisher   String?  @db.VarChar(255)
+  doi         String?  @db.VarChar(100)
+  isbn        String?  @db.VarChar(20)
+  url         String?  @db.VarChar(255)
+  type        String   @default("book") @db.VarChar(50)  // book, article, thesis, etc.
+  citationKey String?  @db.VarChar(50)
+  abstract    String?  @db.Text
+  metadata    Json?    @db.Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  memoireId   String   @db.VarChar(191)
+  memoire     Memoire  @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+  citations   Citation[]
+  
+  @@index([memoireId])
+  @@index([doi])
+  @@index([title])
+}
+
+// ============================================
+// MODÈLE CITATION (Références dans le texte)
+// ============================================
+
+model Citation {
+  id          String   @id @default(cuid())
+  sectionId   String   @db.VarChar(191)
+  section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  bibliographieId String @db.VarChar(191)
+  bibliographie Bibliography @relation(fields: [bibliographieId], references: [id], onDelete: Cascade)
+  context     String?  @db.Text
+  position    Json?    @db.Json           // {start: 100, end: 120}
+  createdAt   DateTime @default(now())
+  
+  @@index([sectionId])
+  @@index([bibliographieId])
+}
+
+// ============================================
+// MODÈLE PLAGIAT (Rapports de détection)
+// ============================================
+
+model PlagiarismReport {
+  id          String   @id @default(cuid())
+  memoireId   String   @db.VarChar(191)
+  memoire     Memoire  @relation(fields: [memoireId], references: [id], onDelete: Cascade)
+  score       Float    @default(0)
+  sources     Json?    @db.Json           // [{source: "url", similarity: 0.15}]
+  status      String   @default("PENDING") @db.VarChar(50)
+  reportUrl   String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([memoireId])
+  @@index([status])
+}
+
+// ============================================
+// MODÈLE AITRACE (Traces des appels IA)
+// ============================================
+
+model AITrace {
+  id          String   @id @default(cuid())
+  userId      String   @db.VarChar(191)
+  user        User     @relation(fields: [userId], references: [id])
+  memoireId   String?  @db.VarChar(191)
+  memoire     Memoire? @relation(fields: [memoireId], references: [id])
+  action      String   @db.VarChar(50)   // improve, summarize, grammar, etc.
+  input       String?  @db.Text
+  output      String?  @db.Text
+  model       String   @default("gpt-4") @db.VarChar(50)
+  tokens      Int?     @db.Int
+  cost        Float?   @db.Float
+  duration    Int?     @db.Int           // en ms
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([memoireId])
+  @@index([action])
+  @@index([createdAt])
+}
 // ============================================
 // MODELE PLAN (Plan interactif du memoire)
 // ============================================
